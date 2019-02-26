@@ -12,6 +12,7 @@ import keras.layers as layers
 from keras import backend
 from keras.models import Model
 from keras.optimizers import Adam
+from keras.initializers import glorot_uniform
 
 def create_weights_biases(n_layers, n_units, n_columns, n_outputs):
     '''
@@ -159,18 +160,22 @@ class MLPModelKeras():
         self.n_columns = n_columns
         self.n_outputs = n_outputs
         self.hidden_activation = hidden_activation
-        self.output_actiation = output_activation
+        self.output_activation = output_activation
         self.learning_rate = learning_rate
 
     def create_policy_model(self, input_shape):
         input_layer = layers.Input(shape=input_shape)
         advantages = layers.Input(shape=[1])
-        hidden_layer = layers.Dense(n_units=self.n_units, activation=self.hidden_activation)(input_layer)
-        output_layer = layers.Dense(n_units=self.n_columns, activation=self.output_activation)(hidden_layer)
         
-        def log_likelihood_loss(actual_labels, predicted_labels):
-            log_likelihood = backend.log(actual_labels * (actual_labels - predicted_labels) + (1 - actual_labels) * (actual_labels - predicted_labels))
-            return backend.mean(log_likelihood * advantages, keepdims=True)
+        hidden_layer = layers.Dense(units=self.n_units, 
+                                    activation=self.hidden_activation)(input_layer)
+        
+        output_layer = layers.Dense(units=self.n_outputs, 
+                                    activation=self.output_activation)(hidden_layer)
+        
+        def log_likelihood_loss(y_true, y_pred):
+            log_lik = backend.log(y_true * (y_true - y_pred) + (1 - y_true) * (y_true + y_pred))
+            return backend.mean(log_lik * advantages, keepdims=True)
         
         policy_model = Model(inputs=[input_layer, advantages], outputs=output_layer)
         policy_model.compile(loss=log_likelihood_loss, optimizer=Adam(self.learning_rate))

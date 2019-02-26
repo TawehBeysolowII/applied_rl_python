@@ -7,7 +7,6 @@ Created on Mon Jan 28 23:18:17 2019
 """
 
 import gym
-import tensorflow as tf
 
 def cartpole():
     environment = gym.make('CartPole-v1')
