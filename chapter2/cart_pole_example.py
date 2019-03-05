@@ -10,10 +10,10 @@ import gym, numpy as np
 from neural_networks.models import MLPModelKeras
 
 #Parameters 
-n_units = 8
+n_units = 5
 gamma = .99
 batch_size = 50
-learning_rate = 1e-2
+learning_rate = 1e-3
 n_episodes = 10000
 render = False
 goal = 190
@@ -22,9 +22,36 @@ n_classes = 2
 environment = gym.make('CartPole-v1')
 environment_dimension = len(environment.reset())
 
+            
+def calculate_discounted_reward(reward, gamma=gamma):
+    output = [reward[i]* gamma**i for i in range(0, len(reward))]
+    return output[::-1]
+
+def score_model(model, n_tests, render=render):
+    scores = []    
+    for _ in range(n_tests):
+        environment.reset()
+        observation = environment.reset()
+        reward_sum = 0
+        while True:
+            if render:
+                environment.render()
+                
+            state = np.reshape(observation, [1, environment_dimension])
+            predict = model.predict([state])[0]
+            action = np.argmax(predict)
+            observation, reward, done, _ = environment.step(action)
+            reward_sum += reward
+            if done:
+                break
+        scores.append(reward_sum)
+        
+    environment.close()
+    return np.mean(scores)
+
 def cart_pole_game(environment, policy_model, model_predictions):
     loss = []
-    n_episode, reward_sum, done = 0, 0, False
+    n_episode, reward_sum, score, done = 0, 0, 0, False
     n_actions = environment.action_space.n
     observation = environment.reset()
     
@@ -33,12 +60,11 @@ def cart_pole_game(environment, policy_model, model_predictions):
     rewards = np.empty(0).reshape(0, 1)
     discounted_rewards = np.empty(0).reshape(0, 1)
     
-    while n_episode < n_episodes:
+    while n_episode < n_episodes or score >= goal: 
          
-        # Append the observations to our batch
         state = np.reshape(observation, [1, environment_dimension])        
         prediction = model_predictions.predict([state])[0]
-        action = np.random.choice(range(n_actions), p=prediction)
+        action = np.argmax(prediction)
         states = np.vstack([states, state])
         actions = np.vstack([actions, action])
         
@@ -65,52 +91,20 @@ def cart_pole_game(environment, policy_model, model_predictions):
                 error = policy_model.train_on_batch([states, discounted_rewards], train_actions)
                 loss.append(error)
                 
-                #Resetting variables 
                 states = np.empty(0).reshape(0, environment_dimension)
                 actions = np.empty(0).reshape(0, 1)
                 discounted_rewards = np.empty(0).reshape(0, 1)
                                 
-                score = score_model(model_predictions, 10)
+                score = score_model(model=model_predictions, n_tests=10)
                 
-                print('''Episode: %s \nAverage Reward: %s 
-                      \nScore: %s \nError: %s''')%(n_episode+1, reward_sum/float(batch_size), score, np.mean(loss[-batch_size:]))
+                print('''\nEpisode: %s \nAverage Reward: %s  \nScore: %s \nError: %s'''
+                      )%(n_episode+1, reward_sum/float(batch_size), score, np.mean(loss[-batch_size:]))
     
-                if score >= goal:
-                    break
                 reward_sum = 0
-        
+                
             n_episode += 1
             observation = environment.reset()
             
-def calculate_discounted_reward(reward, gamma=gamma):
-    output, prior = [], 0    
-    for _reward in reward:
-        output.append(_reward + prior * gamma)
-        prior = _reward    
-    return output[::-1]
-
-
-def score_model(model, n_tests, render=False):
-    scores = []    
-    for _ in range(n_tests):
-        environment.reset()
-        observation = environment.reset()
-        reward_sum = 0
-        while True:
-            if render:
-                environment.render()
-                
-            state = np.reshape(observation, [1, environment_dimension])
-            predict = model.predict([state])[0]
-            action = np.argmax(predict)
-            observation, reward, done, _ = environment.step(action)
-            reward_sum += reward
-            if done:
-                break
-        scores.append(reward_sum)
-        
-    environment.close()
-    return np.mean(scores)
 
 
 if __name__ == '__main__':
@@ -121,8 +115,9 @@ if __name__ == '__main__':
                               n_columns=environment_dimension, 
                               n_outputs=n_classes, 
                               learning_rate=learning_rate, 
-                              hidden_activation='relu', 
-                              output_activation='softmax')
+                              hidden_activation='selu', 
+                              output_activation='softmax',
+                              loss_function='log_likelihood')
         
     policy_model, model_predictions = mlp_model.create_policy_model(input_shape=(environment_dimension, ))
     

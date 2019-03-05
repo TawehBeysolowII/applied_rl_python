@@ -154,7 +154,7 @@ class MLPModelTF():
 
 class MLPModelKeras():
     
-    def __init__(self, n_units, n_layers, n_columns, n_outputs, learning_rate, hidden_activation, output_activation):
+    def __init__(self, n_units, n_layers, n_columns, n_outputs, learning_rate, hidden_activation, output_activation, loss_function):
         self.n_units = n_units
         self.n_layers = n_layers
         self.n_columns = n_columns
@@ -162,23 +162,31 @@ class MLPModelKeras():
         self.hidden_activation = hidden_activation
         self.output_activation = output_activation
         self.learning_rate = learning_rate
+        self.loss_function = loss_function
 
     def create_policy_model(self, input_shape):
         input_layer = layers.Input(shape=input_shape)
         advantages = layers.Input(shape=[1])
         
         hidden_layer = layers.Dense(units=self.n_units, 
-                                    activation=self.hidden_activation)(input_layer)
+                                    activation=self.hidden_activation,
+                                    use_bias=False,
+                                    kernel_initializer=glorot_uniform(seed=42))(input_layer)
         
         output_layer = layers.Dense(units=self.n_outputs, 
-                                    activation=self.output_activation)(hidden_layer)
+                                    activation=self.output_activation,
+                                    use_bias=False,
+                                    kernel_initializer=glorot_uniform(seed=42))(hidden_layer)
         
         def log_likelihood_loss(y_true, y_pred):
             log_lik = backend.log(y_true * (y_true - y_pred) + (1 - y_true) * (y_true + y_pred))
             return backend.mean(log_lik * advantages, keepdims=True)
         
+        if self.loss_function == 'log_likelihood':
+            self.loss_function = log_likelihood_loss
+                
         policy_model = Model(inputs=[input_layer, advantages], outputs=output_layer)
-        policy_model.compile(loss=log_likelihood_loss, optimizer=Adam(self.learning_rate))
+        policy_model.compile(loss=self.loss_function, optimizer=Adam(self.learning_rate))
         model_prediction = Model(input=[input_layer], outputs=output_layer)
         return policy_model, model_prediction
 
