@@ -13,6 +13,31 @@ from keras import backend
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.initializers import glorot_uniform
+#from baselines.common.distributions import make_pdtype
+
+class activation_dictionary():
+    
+    def __init__(self, activation):
+        
+        dictionary = {'relu': tf.nn.relu, 
+                      'selu': tf.nn.selu, 
+                      'sigmoid': tf.nn.sigmoid,
+                      'softmax': tf.nn.softmax}
+        
+        return dictionary[activation]
+
+def convolution_layer(inputs, filters, kernel_size, strides, activation='relu'):
+    
+    return tf.layers.conv2d(inputs=inputs,
+                            filters=filters,
+                            kernel_size=kernel_size,
+                            strides=(strides, strides),
+                            activation=activation_dictionary(activation=activation))
+
+
+def fully_connected_layer(inputs, n_units, activation):
+    return tf.layers.dense(inputs=inputs, units=n_units, activation=activation_dictionary(activation=activation))
+
 
 def create_weights_biases(n_layers, n_units, n_columns, n_outputs):
     '''
@@ -51,107 +76,68 @@ def create_input_output(input_dtype, output_dtype, n_columns, n_outputs):
     return X, Y
  
 
-class MLPModelTF():
+class ActorCriticModel():
     
-    def __init__(self, n_units, n_layers, n_columns, n_outputs, learning_rate, hidden_activation, output_activation):
-        self.n_units = n_units
-        self.n_layers = n_layers
-        self.n_columns = n_columns
-        self.n_outputs = n_outputs
-        self.hidden_activation = hidden_activation
-        self.output_actiation = output_activation
-        self.learning_rate = learning_rate
-        
-    def create_variables_placeholders(self, input_dtype, output_dtype):
-        
-        X, Y = create_input_output(input_dtype=input_dtype,
-                                   output_dtype=output_dtype,
-                                   n_columns=self.n_columns,
-                                   n_outputs=self.n_outputs)
-        
-        weights, biases = create_weights_biases(n_units=self.n_units,
-                                                n_layers=self.n_layers,
-                                                n_columns=self.n_columns,
-                                                n_outputs=self.n_outputs)
-        
-        
-        return X, Y, weights, biases
-    
-    
-    def train_model(self, x_data, y_data, X, Y, weights, biases, epochs, batch_size=32, dropout=None):
-        
-        train_x, train_y, test_x, test_y = train_test_split(x_data, y_data)
-        
-        input_layer = tf.add(tf.matmul(X, weights['input']), biases['input'])
-        input_layer = tf.nn.sigmoid(input_layer)
-        
-        if dropout is not None: 
-            input_layer = tf.nn.dropout(input_layer, dropout)
+    def __init__(self, session, environment, action_space, n_batches, n_steps, reuse=False):
+                # This will use to initialize our kernels
+        gain = np.sqrt(2)
 
-        for _ in range(len(weights)-1):
+        # Based on the action space, will select what probability distribution type
+        # we will use to distribute action in our stochastic policy (in our case DiagGaussianPdType
+        # aka Diagonal Gaussian, 3D normal distribution
+        self.pdtype = make_pdtype(action_space)
+
+        height, weight, channel = environment.shape
+        environment_shape = (height, weight, channel)
+        inputs_ = tf.placeholder(tf.float32, [None, environment_shape], name="input")
+
+        # Normalize the images
+        scaled_images = tf.cast(inputs_, tf.float32) / 255.
+        layer1 = convolution_layer(scaled_images, 32, 8, 4, gain)
+        layer2 = convolution_layer(layer1, 64, 4, 2, gain)
+        layer3 = convolution_layer(layer2, 64, 3, 1, gain)
+        layer4= tf.layers.flatten(layer3)
+        output_layer = fully_connected_layer(layer4, 512, gain=gain)
+
+        # This build a fc connected layer that returns a probability distribution
+        # over actions (self.pd) and our pi logits (self.pi).
+        self.pd, self.pi = self.pdtype.pdfromlatent(output_layer, init_scale=0.01)
+
+        # Calculate the v(s)
+        value_of_state = fully_connected_layer(output_layer, 1, activation_fn=None)[:, 0]
+
+        self.initial_state = None
+
+        # Take an action in the action distribution (remember we are in a situation
+        # of stochastic policy so we don't always take the action with the highest probability
+        # for instance if we have 2 actions 0.7 and 0.3 we have 30% chance to take the second)
+        a0 = self.pd.sample()
+
+        # Function use to take a step returns action to take and V(s)
+        def step(state_in, *_args, **_kwargs):
+            action, value = session.run([a0, value_of_state], {inputs_: state_in})
+           
+            #print("step", action)
             
-            if _ == 0 and len(weights) == 2:            
-                hidden_layer = tf.add(tf.multiply(input_layer, weights['hidden1']), biases['hidden1'])
-                hidden_layer = tf.nn.relu(hidden_layer)
-                
-                if dropout is not None: 
-                    hidden_layer = tf.nn.dropout(hidden_layer, dropout)
-                
-                output_layer = tf.add(tf.multiply(hidden_layer, weights['output_layer']), biases['output_layer'])
+            return action, value
+
+        # Function that calculates only the V(s)
+        def value(state_in, *_args, **_kwargs):
+            return session.run(value_of_state, {inputs_: state_in})
+
+        # Function that output only the action to take
+        def select_action(state_in, *_args, **_kwargs):
+            return session.run(a0, {inputs_: state_in})
+
+        self.inputs_ = inputs_
+        self.value_of_state = value_of_state
+        self.step = step
+        self.value = value
+        self.select_action = select_action
         
-        if int(biases['output_layer'].shape[0]) == 1:
-           error = tf.reduce_sum(tf.pow(output_layer - Y, 2))/(len(train_x))
-           optimizer = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(error)      
-                       
-        else:
-            
-            if int(biases['output_layer'].shape[0]) == 2:
-                predictions = tf.nn.sigmoid(output_layer)
-            else:
-                predictions = tf.nn.softmax(output_layer)
-                
-            accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(predictions, 1), tf.argmax(Y, 1)), tf.float32))
-            cross_entropy = tf.reduce_mean(tf.cast(tf.nn.softmax_cross_entropy_with_logits(logits=output_layer, labels=Y), tf.float32))
-            
-            
-            with tf.Session() as sess:
-                
-                sess.run(tf.initialize_global_variables())
-                
-                for epoch in range(epochs): #Cross-validating data
-                    
-                    rows = np.random.random_integers(0, len(train_x)-1, len(train_x)-1)
-                    _train_x, _train_y = train_x[rows], train_y[rows]
-                    
-                    #Batch training
-                    for start, end in zip(range(0, len(train_x)-1, batch_size), 
-                                          range(batch_size, len(train_x)-1, batch_size)):
-                        
-                        __train_x, __train_y = _train_x[start:end], _train_y[start:end]
-                        
-                        if int(biases['output_layer'].shape[0]) > 1:
-                            
-                            _cross_entropy, _accuracy, _adam_optimizer = sess.run([cross_entropy, accuracy, optimizer],
-                                                                     feed_dict={X:__train_x, Y:__train_y})
-                            
-                            if epoch%10 == 0 and epoch > 0:
-                                print('Epoch: ' + str(epoch) + 
-                                        '\nError: ' + str(_cross_entropy) +
-                                        '\nAccuracy: ' + str(_accuracy) + '\n')
-
-                        else:
-                            _, _error = sess.run([optimizer, error], feed_dict={X:_train_x, Y:_train_y })
-                            
-                            if epoch%10 == 0 and epoch > 0:
-                                print('Epoch ' +  str((epoch+1)) + ' Error: ' + str(_error))
-                                                               
-                    
-            test_error = []
-            for _test_x, _test_y, in zip(test_x, test_y):
-                test_error.append(sess.run(error, feed_dict={X:_test_x, Y:_test_y}))
-            print('Test Error: ' + str(np.sum(test_error)))
-
-
+        
+        
+        
 class MLPModelKeras():
     
     def __init__(self, n_units, n_layers, n_columns, n_outputs, learning_rate, hidden_activation, output_activation, loss_function):

@@ -10,7 +10,7 @@ from pyglet.window import key
 import numpy as np
 from gym.envs.box2d.car_racing import CarRacing
 
-def car_racing(record=False):
+def car_racing_game(record=False):
     environment = CarRacing()
     environment.reset()
     action = np.array([1.0, 1.0, 1.0])
@@ -52,4 +52,4 @@ def car_racing(record=False):
     
 if __name__ == '__main__':
     
-    car_racing()
+    car_racing_game()

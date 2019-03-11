@@ -6,7 +6,7 @@ Created on Wed Feb 20 13:50:58 2019
 @author: tawehbeysolow
 """
 
-import gym, numpy as np
+import gym, numpy as np, matplotlib.pyplot as plt
 from neural_networks.models import MLPModelKeras
 
 #Parameters 
@@ -24,7 +24,7 @@ environment_dimension = len(environment.reset())
 
             
 def calculate_discounted_reward(reward, gamma=gamma):
-    output = [reward[i]* gamma**i for i in range(0, len(reward))]
+    output = [reward[i] * gamma**i for i in range(0, len(reward))]
     return output[::-1]
 
 def score_model(model, n_tests, render=render):
@@ -51,7 +51,7 @@ def score_model(model, n_tests, render=render):
 
 def cart_pole_game(environment, policy_model, model_predictions):
     loss = []
-    n_episode, reward_sum, score, done = 0, 0, 0, False
+    n_episode, reward_sum, score, episode_done = 0, 0, 0, False
     n_actions = environment.action_space.n
     observation = environment.reset()
     
@@ -60,19 +60,19 @@ def cart_pole_game(environment, policy_model, model_predictions):
     rewards = np.empty(0).reshape(0, 1)
     discounted_rewards = np.empty(0).reshape(0, 1)
     
-    while n_episode < n_episodes or score >= goal: 
+    while n_episode < n_episodes: 
          
         state = np.reshape(observation, [1, environment_dimension])        
         prediction = model_predictions.predict([state])[0]
-        action = np.argmax(prediction)
+        action = np.random.choice(range(environment.action_space.n), p=prediction)
         states = np.vstack([states, state])
         actions = np.vstack([actions, action])
         
-        observation, reward, done, info = environment.step(action)
+        observation, reward, episode_done, info = environment.step(action)
         reward_sum += reward
         rewards = np.vstack([rewards, reward])
 
-        if done == True:
+        if episode_done == True:
             
             discounted_reward = calculate_discounted_reward(rewards)
             discounted_rewards = np.vstack([discounted_rewards, discounted_reward])
@@ -100,13 +100,20 @@ def cart_pole_game(environment, policy_model, model_predictions):
                 print('''\nEpisode: %s \nAverage Reward: %s  \nScore: %s \nError: %s'''
                       )%(n_episode+1, reward_sum/float(batch_size), score, np.mean(loss[-batch_size:]))
     
+                if score >= goal: 
+                    break 
+                
                 reward_sum = 0
                 
             n_episode += 1
             observation = environment.reset()
             
-
-
+    plt.title('Policy Gradient Error plot over %s Episodes'%(n_episode+1))
+    plt.xlabel('N Episodes')
+    plt.ylabel('Error Rate')
+    plt.plot(loss)
+    plt.show()
+    
 if __name__ == '__main__':
         
     
@@ -126,12 +133,4 @@ if __name__ == '__main__':
     cart_pole_game(environment=environment, 
                    policy_model=policy_model, 
                    model_predictions=model_predictions)
-
-
-
-    
-    
-    
-    
-    
     
