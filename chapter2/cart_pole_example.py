@@ -21,7 +21,6 @@ n_layers = 2
 n_classes = 2
 environment = gym.make('CartPole-v1')
 environment_dimension = len(environment.reset())
-
             
 def calculate_discounted_reward(reward, gamma=gamma):
     output = [reward[i] * gamma**i for i in range(0, len(reward))]
@@ -109,7 +108,7 @@ def cart_pole_game(environment, policy_model, model_predictions):
             observation = environment.reset()
             
     plt.title('Policy Gradient Error plot over %s Episodes'%(n_episode+1))
-    plt.xlabel('N Episodes')
+    plt.xlabel('N batches')
     plt.ylabel('Error Rate')
     plt.plot(loss)
     plt.show()
