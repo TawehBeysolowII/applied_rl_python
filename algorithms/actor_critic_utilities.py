@@ -7,119 +7,72 @@ Created on Sat Mar 16 06:54:29 2019
 """
 
 import tensorflow as tf, numpy as np
-from baselines.a2c.utils import mse
 from baselines.common.runners import AbstractEnvRunner
+from baselines.common import explained_variance
+
+def mse(pred, target):
+    return tf.square(pred-target)/2.
 
 def find_trainable_variables(key):
     with tf.variable_scope(key):
         return tf.trainable_variables()
+    
+def swap_flatten_axes(array):
+    return arrary.swapaxes(0, 1).reshape(array.shape[0] * array.shape[1], * array.shape[2:])
 
-class ActorCriticModel(object):
-    """
-    We use this object to :
-    __init__:
-    - Creates the step_model
-    - Creates the train_model
-    train():
-    - Make the training part (feedforward and retropropagation of gradients)
-    save/load():
-    - Save load the model
-    """
-    def __init__(self,
-                 policy,
-                ob_space,
-                action_space,
-                nenvs,
-                nsteps,
-                ent_coef,
-                vf_coef,
-                max_grad_norm):
+class Model(object):
+    
+    def __init__(self, session, policy_model, observation_space, action_space, n_environments,
+                 n_steps, entropy_coefficient, value_coefficient, max_grad_norm):
+        
+        session.run(tf.global_variables_initializer())
+        actions_ = tf.placeholder(tf.int32, [None], name='actions')
+        advantages_ = tf.placeholder(tf.float32, [None], name='advantages')
+        rewards_ = tf.placeholder(tf.float32, [None], name='rewards')
+        learning_rate = tf.placeholder(tf.float32, name='learning_rate')
+        step_model = policy_model(session, observation_space, action_space, n_environments, 1, reuse=False)
+        train_model = policy_model(session, observation_space, action_space, n_environments*n_steps, n_steps, reuse=tf.AUTO_REUSE)
+        
+        error_rate = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.logits, labels=actions_)
+        mean_squared_error = tf.reduce_mean(advantages_ * error_rate)
 
-        sess = tf.get_default_session()
+        value_loss = tf.reduce_mean(mse(tf.squeeze(train_model.value_function),rewards_))
+        entropy = tf.reduce_mean(train_model.distribution.entropy())
+        loss = mean_squared_error - entropy * entropy_coefficient + value_loss * value_coefficient
 
-        # Here we create the placeholders
-        actions_ = tf.placeholder(tf.int32, [None], name="actions_")
-        advantages_ = tf.placeholder(tf.float32, [None], name="advantages_")
-        rewards_ = tf.placeholder(tf.float32, [None], name="rewards_")
-        lr_ = tf.placeholder(tf.float32, name="learning_rate_")
-
-        # Here we create our two models:
-        # Step_model that is used for sampling
-        step_model = policy(sess, ob_space, action_space, nenvs, 1, reuse=False)
-
-        # Train model for training
-        train_model = policy(sess, ob_space, action_space, nenvs*nsteps, nsteps, reuse=True)
-
-        """
-        Calculate the loss
-        Total loss = Policy gradient loss - entropy * entropy coefficient + Value coefficient * value loss
-        """
-        # Policy loss
-        # Output -log(pi)
-        negative_log_pi = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=actions_)
-
-        # 1/n * sum A(si,ai) * -logpi(ai|si)
-        pg_loss = tf.reduce_mean(advantages_ * negative_log_pi)
-
-        # Value loss 1/2 SUM [R - V(s)]^2
-        vf_loss = tf.reduce_mean(mse(tf.squeeze(train_model.vf),rewards_))
-
-        # Entropy is used to improve exploration by limiting the premature convergence to suboptimal policy.
-        entropy = tf.reduce_mean(train_model.pd.entropy())
-
-
-        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
-
-        # Update parameters using loss
-        # 1. Get the model parameters
-        params = find_trainable_variables("model")
-
-        # 2. Calculate the gradients
+        params = find_trainable_variables('model')
         gradients = tf.gradients(loss, params)
         if max_grad_norm is not None:
-            # Clip the gradients (normalize)
             gradients, grad_norm = tf.clip_by_global_norm(gradients, max_grad_norm)
             
         gradients = list(zip(gradients, params))
-        # zip aggregate each gradient with parameters associated
-        # For instance zip(ABCD, xyza) => Ax, By, Cz, Da
-
-        # 3. Build our trainer
-        trainer = tf.train.RMSPropOptimizer(learning_rate=lr_, decay=0.99, epsilon=1e-5)
-
-        # 4. Backpropagation
+        trainer = tf.train.RMSPropOptimizer(learning_rate=learning_rate, decay=0.99, epsilon=1e-5)
         _train = trainer.apply_gradients(gradients)
-        
 
-        def train(states_in, actions, returns, values, lr):
+        def train(states_in, actions, returns, values, learning_rate):
             advantages = returns - values
 
-            # We create the feed dictionary
-            td_map = {train_model.inputs_: states_in,
-                     actions_: actions,
-                     advantages_: advantages, # Use to calculate our policy loss
-                     rewards_: returns, # Use as a bootstrap for real value
-                     lr_: lr}
-
-            policy_loss, value_loss, policy_entropy, _= sess.run([pg_loss, vf_loss, entropy, _train], td_map)
+            dictionary = {train_model.inputs_: states_in,
+                         actions_: actions,
+                         advantages_: advantages,
+                         rewards_: returns,
+                         learning_rate: learning_rate}
             
-            return policy_loss, value_loss, policy_entropy
-
+            with tf.Session() as session:
+                _policy_loss, _value_loss, _policy_entropy, _= session.run([mean_squared_error, 
+                                                                            value_loss, 
+                                                                            entropy, 
+                                                                            _train], dictionary)
+            return _policy_loss, _value_loss, _policy_entropy
 
         def save(save_path):
-            """
-            Save the model
-            """
             saver = tf.train.Saver()
-            saver.save(sess, save_path)
+            saver.save(session, save_path)
 
         def load(load_path):
-            """
-            Load the model
-            """
             saver = tf.train.Saver()
             print('Loading ' + load_path)
-            saver.restore(sess, load_path)
+            saver.restore(session, load_path)
 
         self.train = train
         self.train_model = train_model
@@ -129,38 +82,21 @@ class ActorCriticModel(object):
         self.initial_state = step_model.initial_state
         self.save = save
         self.load = load
-        tf.global_variables_initializer().run(session=sess)
+        tf.global_variables_initializer().run(session=tf.Session())
 
 class Runner(AbstractEnvRunner):
-    """
-    We use this object to make a mini batch of experiences
     
-    __init__:
-    - Initialize the runner
-    run():
-        
-    - Make a mini batch
-    """
     def __init__(self, environment, model, nsteps, total_timesteps, gamma, _lambda):
-        super().__init__(environment = environment, model = model, nsteps = nsteps)
+        super().__init__(environment=environment, model=model, n_steps=n_steps)
 
-        # Discount rate
         self.gamma = gamma
-
-        # Lambda used in GAE (General Advantage Estimation)
         self._lambda = _lambda
-
-        # Total timesteps taken
         self.total_timesteps = total_timesteps
 
     def run(self):
-        # Here, we init the lists that will contain the batch of experiences
         _observations, _actions, _rewards, _values, _dones = [],[],[],[],[]
 
-        # For n in range number of steps
-        for n in range(self.nsteps):
-            # Given observations, take action and value (V(s))
-            # We already have self.obs because AbstractEnvRunner run self.obs[:] = env.reset()
+        for _ in range(self.n_steps):
             actions, values = self.model.step(self.obs, self.dones)
             _observations.append(np.copy(self.obs)) #obs len nenvs (1 step per env)
             _actions.append(actions)
@@ -181,38 +117,97 @@ class Runner(AbstractEnvRunner):
 
         last_lambda = 0
 
-        # From last step to first step
         for t in reversed(range(self.nsteps)):
-            # If t == before last step
             if t == self.nsteps - 1:
-                # If a state is done, nextnonterminal = 0
-                # In fact nextnonterminal allows us to do that logic
-
-                #if done (so nextnonterminal = 0):
-                #    delta = R - V(s) (because self.gamma * nextvalues * nextnonterminal = 0) 
-                # else (not done)
-                    #delta = R + gamma * V(st+1)
-                nextnonterminal = 1.0 - self.dones
-                
-                # V(t+1)
-                nextvalues = last_values
+                next_nonterminal = 1.0 - self.dones
+                next_values = last_values
             else:
-                nextnonterminal = 1.0 - _dones[t+1]
-                
-                nextvalues = _values[t+1]
+                next_nonterminal = 1.0 - _dones[t+1]
+                next_values = _values[t+1]
 
             delta = _rewards[t] + self.gamma * nextvalues * nextnonterminal - _values[t]
             _advantages[t] = last_lambda = delta + self.gamma * self._lambda * nextnonterminal * last_lambda
 
-        # Returns
         _returns = _advantages + _values
-
         return map(swap_flatten_axes, (_observations, _actions, _returns, _values))
 
 
-def swap_flatten_axes(arr):
-    """
-    swap and then flatten axes 0 and 1
-    """
-    s = arr.shape
-    return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
+def train_model(policy, environment, n_steps, max_steps, gamma, _lambda,
+                value_coefficient, entropy_coefficient, learning_rate, max_grad_norm, log_interval):
+
+    n_epochs = 4
+    n_batches = 8
+    n_environments = environment.num_envs
+    observation_space = environment.observation_space
+    action_space = environment.action_space
+    batch_size = n_environments * n_steps 
+    batch_train_size = batch_size // n_batches
+    assert batch_size % n_batches == 0
+
+    model = ActorCriticModel(policy=policy,
+                            obsevration_space=observation_space,
+                            action_space=action_space,
+                            n_environments=n_environments,
+                            n_steps=n+steps,
+                            entropy_coefficient=entropy_coefficient,
+                            value_coefficient=value_coefficient,
+                            max_grad_norm=max_grad_norm)
+ 
+    model.load("./models/260/model.ckpt")
+
+    runner = Runner(environment, 
+                    model=model, 
+                    n_steps=n_steps, 
+                    n_timesteps=n_timesteps, 
+                    gamma=gamma, 
+                    _lambda=_lambda)
+
+
+    initial_start_time = time.time()
+
+
+    for update in range(1, n_timesteps//batch_size+1):
+        
+        timer_start = time.time()
+        observations, actions, returns, values = runner.run()
+        mb_losses = []
+        total_batches_train = 0
+        indices = np.arange(batch_size)
+
+        for _ in range(n_epochs):
+            np.random.shuffle(indices)
+            for start in range(0, batch_size, batch_train_size):
+                end = start + batch_train_size
+                mbinds = indices[start:end]
+                slices = (arr[mbinds] for arr in (obs, actions, returns, values))
+                mb_losses.append(model.train(*slices, lr))
+
+        loss = np.mean(mb_losses, axis=0)
+        frames_per_second = int(batch_size / (time.time() - initial_start_time))
+
+        if update % log_interval == 0 or update == 1:
+            
+            """
+            Computes fraction of variance that ypred explains about y.
+            Returns 1 - Var[y-ypred] / Var[y]
+            interpretation:
+            explained_variance = 0  =>  might as well have predicted zero
+            explained_variance = 1  =>  perfect prediction
+            explained_variance < 0  =>  worse than just predicting zero
+            """
+            _explained_variance = explained_variance(values, returns)
+            logger.record_tabular("nupdates", update)
+            logger.record_tabular("total_timesteps", update*batch_size)
+            logger.record_tabular("fps", fps)
+            logger.record_tabular("policy_loss", float(loss[0]))
+            logger.record_tabular("policy_entropy", float(lossvalues[2]))
+            logger.record_tabular("value_loss", float(lossvalues[1]))
+            logger.record_tabular("explained_variance", float(_explained_variance))
+            logger.record_tabular("time elapsed", float(tnow - tfirststart))
+            logger.dump_tabular()
+
+            savepath = "./models/" + str(update) + "/model.ckpt"
+            model.save(savepath)
+            print('Saving to', savepath)
+            
+    environment.close()

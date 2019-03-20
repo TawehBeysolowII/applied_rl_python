@@ -27,10 +27,10 @@ class Memory():
         
         return [self.buffer[i] for i in index]
 
-def create_environment():
+def create_environment(filepath='/Users/tawehbeysolow/Desktop/applied_rl_python/chapter3/'):
     game = DoomGame()    
-    game.load_config("basic.cfg")
-    game.set_doom_scenario_path("basic.wad")    
+    game.load_config(filepath+'basic.cfg')
+    game.set_doom_scenario_path(filepath+'basic.wad')    
     game.init()
     
     left = [1, 0, 0]
