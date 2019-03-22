@@ -72,28 +72,33 @@ def train_model(model, environment):
             while step < max_steps:
                 step += 1; decay_step += 1
                 
-                action, explore_probability = exploit_explore(sess,
-                                                              model,
-                                                              explore_start, 
-                                                              explore_stop, 
-                                                              decay_rate, 
-                                                              decay_step, 
-                                                              state, 
-                                                              possible_actions)
+                action, explore_probability = exploit_explore(session=sess,
+                                                              model=model,
+                                                              explore_start=explore_start, 
+                                                              explore_stop=explore_stop, 
+                                                              decay_rate=decay_rate, 
+                                                              decay_step=decay_step, 
+                                                              state=state, 
+                                                              actions=possible_actions)
                     
                 reward = environment.make_action(action)
                 done = environment.is_episode_finished()
                 reward_sum.append(reward)
 
                 if done:
+                    
                     next_state = np.zeros((84,84), dtype=np.int)
-                    next_state, stacked_frames = stack_frames(stacked_frames, next_state, False)
+                    
+                    next_state, stacked_frames = stack_frames(stacked_frames=stacked_frames, 
+                                                              state=next_state, 
+                                                              new_episode=False)
                     step = max_steps
+                    
                     total_reward = np.sum(reward_sum)
-
+                    
+                    
                     print('Episode: {}'.format(episode),
                               'Total reward: {}'.format(total_reward),
-                              #'Training loss: {:.4f}'.format(loss),
                               'Explore P: {:.4f}'.format(explore_probability))
 
                     memory.add((state, action, reward, next_state, done))
@@ -131,8 +136,7 @@ def train_model(model, environment):
                 targets = np.array([each for each in target_Qs_batch])
                 
                 '''
-
-                loss, _ = sess.run([model.error_rate], feed_dict={model.input_matrix: states,
+                error_rate = sess.run([model.error_rate], feed_dict={model.input_matrix: states,
                                                                  model.target_Q: targets,
                                                                  model.actions: actions})
 
@@ -144,12 +148,12 @@ def train_model(model, environment):
 
                 writer.add_summary(summary, episode)
                 writer.flush()
-                '''
+              
 
-            # Save model every 5 episodes
-            #if episode % 5 == 0:
+            if episode % 5 == 0:
                 #saver.save(sess, filepath+'/models/model.ckpt')
                 #print("Model Saved")
+                '''
     
     return model
   
@@ -186,7 +190,6 @@ def play_doom(model, environment):
                     break  
                     
                 else:
-                    #print("else")
                     next_state = environment.get_state().screen_buffer
                     next_state, stacked_frames = stack_frames(stacked_frames, next_state, False)
                     state = next_state
