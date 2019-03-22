@@ -93,7 +93,6 @@ def train_model(model, environment):
 
                     print('Episode: {}'.format(episode),
                               'Total reward: {}'.format(total_reward),
-                              #'Training loss: {:.4f}'.format(loss),
                               'Explore P: {:.4f}'.format(explore_probability))
 
                     memory.add((state, action, reward, next_state, done))
@@ -144,12 +143,12 @@ def train_model(model, environment):
 
                 writer.add_summary(summary, episode)
                 writer.flush()
-                '''
+              
 
-            # Save model every 5 episodes
-            #if episode % 5 == 0:
+            if episode % 5 == 0:
                 #saver.save(sess, filepath+'/models/model.ckpt')
                 #print("Model Saved")
+                '''
     
     return model
   
@@ -186,7 +185,6 @@ def play_doom(model, environment):
                     break  
                     
                 else:
-                    #print("else")
                     next_state = environment.get_state().screen_buffer
                     next_state, stacked_frames = stack_frames(stacked_frames, next_state, False)
                     state = next_state
