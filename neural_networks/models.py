@@ -14,8 +14,6 @@ from keras.models import Model
 from keras.optimizers import Adam
 from keras.initializers import glorot_uniform
 from baselines.common.distributions import make_pdtype
-
-
         
 activation_dictionary = {'elu': tf.nn.elu,
                          'relu': tf.nn.relu, 
@@ -37,13 +35,24 @@ def linear_operation(x, size, name, initializer=None, bias_init=0):
     biases = tf.get_variable("b", [size], initializer=tf.constant_initializer(bias_init))
     return tf.matmul(x, weights) + biases
 
-def convolution_layer(inputs, filters, kernel_size, strides, gain=np.sqrt(2), activation='relu'):
-    return tf.layers.conv1d(inputs=inputs,
-                            filters=filters,
-                            kernel_size=kernel_size,
-                            kernel_initializer=tf.orthogonal_initializer(gain),
-                            strides=(strides),
-                            activation=activation_dictionary[activation])
+def convolution_layer(inputs, dimensions, filters, kernel_size, strides, gain=np.sqrt(2), activation='relu'):
+    
+    if dimensions == 3:
+    
+        return tf.layers.conv1d(inputs=inputs,
+                                filters=filters,
+                                kernel_size=kernel_size,
+                                kernel_initializer=tf.orthogonal_initializer(gain),
+                                strides=(strides),
+                                activation=activation_dictionary[activation])
+    elif dimensions == 4:
+        
+        return tf.layers.conv2d(inputs=inputs,
+                                filters=filters,
+                                kernel_size=kernel_size,
+                                kernel_initializer=tf.orthogonal_initializer(gain),
+                                strides=(strides),
+                                activation=activation_dictionary[activation])
 
 
 def fully_connected_layer(inputs, units, activation, gain=np.sqrt(2)):
@@ -124,15 +133,15 @@ class DeepQNetwork():
         self.stride = stride
         self.kernel = kernel
         
-        input_matrix = tf.placeholder(tf.float32, state_size)
-        actions = tf.placeholder(tf.float32, [None, n_classes])
+        self.input_matrix = tf.placeholder(tf.float32, [None, *state_size])
+        self.actions = tf.placeholder(tf.float32, [None])
+        self.target_Q = tf.placeholder(tf.float32, [None, *state_size])
         
-        target_Q = tf.placeholder(tf.float32, [None])
-        
-        self.network1 = convolution_layer(inputs=input_matrix, 
+        self.network1 = convolution_layer(inputs=self.input_matrix, 
                                      filters=self.n_filters, 
                                      kernel_size=self.kernel, 
                                      strides=self.stride,
+                                     dimensions=4,
                                      activation='elu')
         
         self.network1 = tf.layers.batch_normalization(self.network1,
@@ -143,6 +152,7 @@ class DeepQNetwork():
                                      filters=self.n_filters*2, 
                                      kernel_size=int(self.kernel/2), 
                                      strides=int(self.stride/2), 
+                                     dimensions=4,
                                      activation='elu')
      
         self.network2 = tf.layers.batch_normalization(inputs=self.network2,
@@ -153,6 +163,7 @@ class DeepQNetwork():
                                      filters=self.n_filters*4, 
                                      kernel_size=int(self.kernel/2), 
                                      strides=int(self.stride/2),
+                                     dimensions=4,
                                      activation='elu')
      
         self.network3 = tf.layers.batch_normalization(inputs=self.network3,
@@ -169,9 +180,9 @@ class DeepQNetwork():
                                             units=n_classes,
                                             activation=None)
         
-        self.predicted_Q = tf.reduce_sum(tf.multiply(self.output, actions), axis=1)
+        self.predicted_Q = tf.reduce_sum(tf.multiply(self.output, self.actions), axis=1)
         
-        self.error_rate = tf.reduce_mean(tf.square(target_Q - self.predicted_Q))
+        self.error_rate = tf.reduce_mean(tf.square(self.target_Q - self.predicted_Q))
         
         self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.error_rate)
  
@@ -191,17 +202,20 @@ class ActorCriticModel():
             layer1 = tf.layers.batch_normalization(convolution_layer(inputs=scaled_images, 
                                                                      filters=32, 
                                                                      kernel_size=8, 
-                                                                     strides=4))
+                                                                     strides=4,
+                                                                     dimensions=3))
                         
             layer2 = tf.layers.batch_normalization(convolution_layer(inputs=tf.nn.relu(layer1), 
                                                                      filters=64, 
                                                                      kernel_size=4, 
-                                                                     strides=2))
+                                                                     strides=2,
+                                                                     dimensions=3))
             
             layer3 = tf.layers.batch_normalization(convolution_layer(inputs=tf.nn.relu(layer2), 
                                                                      filters=64, 
                                                                      kernel_size=3, 
-                                                                     strides=1))
+                                                                     strides=1,
+                                                                     dimensions=3))
             
             layer3 = tf.layers.flatten(inputs=layer3)
             output_layer = fully_connected_layer(inputs=layer3, units=512, activation='softmax')

@@ -22,8 +22,8 @@ class Memory():
     def sample(self, batch_size):
         buffer_size = len(self.buffer)
         index = np.random.choice(np.arange(buffer_size),
-                                size = batch_size,
-                                replace = False)
+                                size=batch_size,
+                                replace=True)
         
         return [self.buffer[i] for i in index]
 

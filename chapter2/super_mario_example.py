@@ -18,9 +18,9 @@ environment = BinarySpaceToDiscreteSpaceEnv(environment, SIMPLE_MOVEMENT)
 observation = environment.reset()
 
 def play_super_mario(policy_model=ActorCriticModel, environment=environment):
+    
     observation_space = environment.observation_space
     action_space = environment.action_space
-
  
     with tf.Session(config=tf.ConfigProto()) as session:
         

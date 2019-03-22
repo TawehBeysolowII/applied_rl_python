@@ -29,7 +29,7 @@ def choose_action(state):
     '''   
     return np.argmax(Q_matrix[state, :])
 
-def exploit_explore(prior_state, epsilon=epsilon):    
+def exploit_explore(prior_state, epsilon=epsilon, Q_matrix=Q_matrix):    
     '''
     One half of the exploit-explore paradigm that we will utilize 
     
