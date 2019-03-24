@@ -6,44 +6,75 @@ Created on Fri Mar  8 13:16:38 2019
 @author: tawehbeysolow
 """
 
-import numpy as np 
 from collections import defaultdict
+import numpy as np
+
+class EligibilityTrace(object):
+    """class containing logic for SARSA-lambda eligibility traces
+        this is basically a wrapper for a dict that 
+            1) clips its values to lie in the interval [0, 1]
+            2) updates all values by a decay constant and throws out those
+                that fall below some threshold
+    """
+    def __init__(self, decay, threshold):
+        self.decay = decay
+        self.threshold = threshold
+        self.data = defaultdict(float)
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __setitem__(self, key, val):
+        self.data[key] = np.clip(val, 0, 1)
+
+    def iteritems(self):
+        return self.data.iteritems()
+
+    def update(self):
+        for key in self.data.keys():
+            if self.data[key] < self.threshold:
+                del self.data[key]
+            else:
+                self.data[key] = self.data[key] * self.decay
 
 
-def toDiscreteStates(observation):
-	interval=[0 for i in range(len(observation))]
-	max_range=[1.2,0.07]	#[4.8,3.4*(10**38),0.42,3.4*(10**38)]
+class SARSA(Agent):
+    """impementation of SARSA lambda algorithm.
+        class SARSA is equivilant to this with lambda = 0, but 
+        we seperate the two out because
+            1) it's nice to juxtapose the two algorithms side-by-side
+            2) SARSA lambda incurrs the overhead of maintaining
+                eligibility traces
+        note that the algorithm isn't explicitly parameterized with lambda.
+            instead, we provide a decay rate and threshold. On each iteration,
+            the decay is applied all rewards in the eligibility trace. Those 
+            past rewards who have decayed below the threshold are dropped
+    """
+    def __init__(self, featureExtractor, max_gradient, epsilon=0.5, gamma=0.993, stepSize=None, threshold=0.1, decay=0.98):
+        super(SARSA, self).__init__(featureExtractor, epsilon, gamma, stepSize, max_gradient)
+        self.eligibility_trace = EligibilityTrace(decay, threshold)
 
-	for i in range(len(observation)):
-		data = observation[i]
-		inter = int(math.floor((data + max_range[i])/(2*max_range[i]/buckets[i])))
-		if inter>=buckets[i]:
-			interval[i]=buckets[i]-1
-		elif inter<0:
-			interval[i]=0
-		else:
-			interval[i]=inter
-	return interval
+    def update_q_matrix(self, state, action, reward, newState):
+        """performs a SARSA update. Leverages the eligibility trace to update 
+            parameters towards sum of discounted rewards
+        """
+        self.eligibility_trace.update()
+        prediction = self.getQ(state, action)
+        newAction = None
+        target = reward
+        for f, v in self.featureExtractor.get_features(state, action).iteritems():
+            self.eligibility_trace[f] += v
 
-def get_action(observation,t):
+        if newState != None:
+            newAction = self.takeAction(newState)
+            target += self.discount * self.getQ(newState, newAction)
 
-	if np.random.random()<max(0.001, min(0.015, 1.0 - math.log10((t+1)/220.))):#get_epsilon(t):
-		return env.action_space.sample()
-	interval = toDiscreteStates(observation)
-	
-	# if Q_table[tuple(interval)][0] >=Q_table[tuple(interval)][1]:
-	# 	return 0
-	# else:
-	# 	return 1
-	return np.argmax(np.array(Q_table[tuple(interval)]))
+        update = self.getStepSize(self.numIters) * (prediction - target)
+        # clip gradient - TODO EXPORT TO UTILS?
+        update = max(-self.max_gradient, update) if update < 0 else min(self.max_gradient, update)
 
-def updateQ_SARSA(observation,reward,action,ini_obs,next_action,t):
-	
-	interval = toDiscreteStates(observation)
+        for key, eligibility in self.eligibility_trace.iteritems():
+            self.weights[key] -= update * eligibility
+        return newAction
 
-	Q_next = Q_table[tuple(interval)][next_action]
-
-	ini_interval = toDiscreteStates(ini_obs)
-
-	Q_table[tuple(ini_interval)][action]+=max(0.4, min(0.1, 1.0 - math.log10((t+1)/125.)))*(reward + gamma*(Q_next) - Q_table[tuple(ini_interval)][action])
 

@@ -6,7 +6,7 @@ Created on Sat Mar 16 06:54:29 2019
 @author: tawehbeysolow
 """
 
-import tensorflow as tf, numpy as np
+import time, tensorflow as tf, numpy as np
 from baselines.common.runners import AbstractEnvRunner
 from baselines.common import explained_variance
 
@@ -84,26 +84,34 @@ class Model(object):
         self.load = load
         tf.global_variables_initializer().run(session=tf.Session())
 
-class Runner(AbstractEnvRunner):
+class ModelTrainer(AbstractEnvRunner):
     
-    def __init__(self, environment, model, nsteps, total_timesteps, gamma, _lambda):
-        super().__init__(environment=environment, model=model, n_steps=n_steps)
-
+    def __init__(self, environment, model, n_steps, n_timesteps, gamma, _lambda):
+        self.environment = environment
+        self.model = model
+        self.n_steps = n_steps
         self.gamma = gamma
         self._lambda = _lambda
-        self.total_timesteps = total_timesteps
+        self.n_timesteps = n_timesteps
+        self.observations = environment.reset()
+        self.dones = False
 
-    def run(self):
+    def step(self):
+        
         _observations, _actions, _rewards, _values, _dones = [],[],[],[],[]
 
         for _ in range(self.n_steps):
-            actions, values = self.model.step(self.obs, self.dones)
-            _observations.append(np.copy(self.obs)) #obs len nenvs (1 step per env)
+            actions, values = self.model.step(self.observations, self.dones)
+            _observations.append(np.copy(self.observations)) 
             _actions.append(actions)
             _values.append(values)
             _dones.append(self.dones)
-            self.observations[:], rewards, self.dones, _ = self.environment.step(actions)
-            _rewards.append(rewards)
+            if self.dones: self.environment.reset()
+            
+            for action in actions:
+                self.environment.render()
+                self.observations[:], rewards, self.dones, _ = self.environment.step(action)
+                _rewards.append(rewards)
 
         #batch of steps to batch of rollouts
         _observations = np.asarray(_observations, dtype=np.uint8)
@@ -114,10 +122,9 @@ class Runner(AbstractEnvRunner):
         last_values = self.model.value(self.observations)
         _returns = np.zeros_like(_rewards)
         _advantages = np.zeros_like(_rewards)
-
         last_lambda = 0
 
-        for t in reversed(range(self.nsteps)):
+        for t in reversed(range(self.n_steps)):
             if t == self.nsteps - 1:
                 next_nonterminal = 1.0 - self.dones
                 next_values = last_values
@@ -132,44 +139,43 @@ class Runner(AbstractEnvRunner):
         return map(swap_flatten_axes, (_observations, _actions, _returns, _values))
 
 
-def train_model(policy, environment, n_steps, max_steps, gamma, _lambda,
+def train_model(policy_model, environment, n_steps, max_steps, gamma, _lambda,
                 value_coefficient, entropy_coefficient, learning_rate, max_grad_norm, log_interval):
 
     n_epochs = 4
     n_batches = 8
-    n_environments = environment.num_envs
+    n_environments = 1 #environment.num_envs
     observation_space = environment.observation_space
     action_space = environment.action_space
     batch_size = n_environments * n_steps 
     batch_train_size = batch_size // n_batches
     assert batch_size % n_batches == 0
+    session = tf.Session()
 
-    model = ActorCriticModel(policy=policy,
-                            obsevration_space=observation_space,
-                            action_space=action_space,
-                            n_environments=n_environments,
-                            n_steps=n+steps,
-                            entropy_coefficient=entropy_coefficient,
-                            value_coefficient=value_coefficient,
-                            max_grad_norm=max_grad_norm)
+    model = Model(session=session,
+                      policy_model=policy_model,
+                      observation_space=observation_space,
+                      action_space=action_space,
+                      n_environments=1,
+                      n_steps=1,
+                      entropy_coefficient=0,
+                      value_coefficient=0,
+                      max_grad_norm=0)
  
-    model.load("./models/260/model.ckpt")
-
-    runner = Runner(environment, 
-                    model=model, 
-                    n_steps=n_steps, 
-                    n_timesteps=n_timesteps, 
-                    gamma=gamma, 
-                    _lambda=_lambda)
-
+    model_trainer = ModelTrainer(environment=environment, 
+                            model=model, 
+                            n_steps=n_steps, 
+                            n_timesteps=max_steps, 
+                            gamma=gamma, 
+                            _lambda=_lambda)
 
     initial_start_time = time.time()
 
 
-    for update in range(1, n_timesteps//batch_size+1):
+    for update in range(1, max_steps//batch_size+1):
         
         timer_start = time.time()
-        observations, actions, returns, values = runner.run()
+        observations, actions, returns, values = model_trainer.step()
         mb_losses = []
         total_batches_train = 0
         indices = np.arange(batch_size)
@@ -198,12 +204,12 @@ def train_model(policy, environment, n_steps, max_steps, gamma, _lambda,
             _explained_variance = explained_variance(values, returns)
             logger.record_tabular("nupdates", update)
             logger.record_tabular("total_timesteps", update*batch_size)
-            logger.record_tabular("fps", fps)
+            logger.record_tabular("fps", frames_per_second)
             logger.record_tabular("policy_loss", float(loss[0]))
-            logger.record_tabular("policy_entropy", float(lossvalues[2]))
-            logger.record_tabular("value_loss", float(lossvalues[1]))
+            logger.record_tabular("policy_entropy", float(loss[2]))
+            logger.record_tabular("value_loss", float(loss[1]))
             logger.record_tabular("explained_variance", float(_explained_variance))
-            logger.record_tabular("time elapsed", float(tnow - tfirststart))
+            logger.record_tabular("time elapsed", float(time.time() - initial_start_time))
             logger.dump_tabular()
 
             savepath = "./models/" + str(update) + "/model.ckpt"
@@ -211,3 +217,4 @@ def train_model(policy, environment, n_steps, max_steps, gamma, _lambda,
             print('Saving to', savepath)
             
     environment.close()
+    return model

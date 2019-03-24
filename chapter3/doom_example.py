@@ -20,7 +20,7 @@ train = True
 episode_render = False
 n_units = 500
 n_classes = 3
-learning_rate = 1e-4
+learning_rate = 1e-2
 stride = 4 
 kernel = 8
 n_filters = 3
@@ -57,6 +57,7 @@ def train_model(model, environment):
     saver = tf.train.Saver()
     stacked_frames = deque([np.zeros((84,84), dtype=np.int) for i in range(stack_size)], maxlen=4) 
     memory = Memory(max_size=memory_size)
+    scores = []
             
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -95,6 +96,8 @@ def train_model(model, environment):
                     step = max_steps
                     
                     total_reward = np.sum(reward_sum)
+                    
+                    scores.append(total_reward)
                     
                     
                     print('Episode: {}'.format(episode),
@@ -155,19 +158,27 @@ def train_model(model, environment):
                 #print("Model Saved")
                 '''
     
+    plt.plot(scores)
+    plt.title('DQN Performance During Training')
+    plt.xlabel('N Episodes')
+    plt.ylabel('Score Value')
+    plt.show()
+    plt.waitforbuttonpress()
+    plt.close()
     return model
   
     
 def play_doom(model, environment):
     
     stacked_frames = deque([np.zeros((84,84), dtype=np.int) for i in range(stack_size)], maxlen=4) 
+    scores = []
     
     with tf.Session() as sess:
         
         sess.run(tf.global_variables_initializer())
         totalScore = 0
         
-        for _ in range(1):
+        for _ in range(100):
             
             done = False
             
@@ -185,6 +196,7 @@ def play_doom(model, environment):
                 environment.make_action(action)
                 done = environment.is_episode_finished()
                 score = environment.get_total_reward()
+                scores.append(score)
                 
                 if done:
                     break  
@@ -198,6 +210,14 @@ def play_doom(model, environment):
             print("Score: ", score)
             
         environment.close()
+        
+    plt.plot(scores)
+    plt.title('DQN Performance After Training')
+    plt.xlabel('N Episodes')
+    plt.ylabel('Score Value')
+    plt.show()
+    plt.waitforbuttonpress()
+    plt.close()
     
 if __name__ == '__main__':
     
@@ -211,17 +231,8 @@ if __name__ == '__main__':
                          action_size=action_size, 
                          learning_rate=learning_rate)
     
-    
     trained_model = train_model(model=model,
                                 environment=environment)
     
     play_doom(model=trained_model,
               environment=environment)
-    
-    
-    
-    
-    
-    
-    
-    
