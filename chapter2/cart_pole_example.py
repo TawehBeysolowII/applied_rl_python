@@ -7,7 +7,7 @@ Created on Wed Feb 20 13:50:58 2019
 """
 
 import gym, numpy as np, matplotlib.pyplot as plt
-from neural_networks.models import MLPModelKeras
+from neural_networks.policy_gradient_utilities import PolicyGradient
 
 #Parameters 
 n_units = 5
@@ -116,7 +116,7 @@ def cart_pole_game(environment, policy_model, model_predictions):
 if __name__ == '__main__':
         
     
-    mlp_model = MLPModelKeras(n_units=n_units, 
+    mlp_model = PolicyGradient(n_units=n_units, 
                               n_layers=n_layers, 
                               n_columns=environment_dimension, 
                               n_outputs=n_classes, 

@@ -8,11 +8,6 @@ Created on Wed Feb 20 21:49:13 2019
 
 import tensorflow as tf, numpy as np
 from sklearn.model_selection import train_test_split
-import keras.layers as layers
-from keras import backend
-from keras.models import Model
-from keras.optimizers import Adam
-from keras.initializers import glorot_uniform
 from baselines.common.distributions import make_pdtype
         
 activation_dictionary = {'elu': tf.nn.elu,
@@ -134,8 +129,9 @@ class DeepQNetwork():
         self.kernel = kernel
         
         self.input_matrix = tf.placeholder(tf.float32, [None, *state_size])
-        self.actions = tf.placeholder(tf.float32, [None])
-        self.target_Q = tf.placeholder(tf.float32, [None, *state_size])
+        self.actions = tf.placeholder(tf.float32, [None, n_classes])
+        self.target_Q = tf.placeholder(tf.float32, [None])
+            
         
         self.network1 = convolution_layer(inputs=self.input_matrix, 
                                      filters=self.n_filters, 
@@ -186,7 +182,7 @@ class DeepQNetwork():
         
         self.optimizer = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.error_rate)
  
-
+    
 class ActorCriticModel():
     
     def __init__(self, session, environment, action_space, n_batches, n_steps, reuse=False):
@@ -242,44 +238,6 @@ class ActorCriticModel():
         self.select_action = select_action
     
         
-class MLPModelKeras():
-    
-    def __init__(self, n_units, n_layers, n_columns, n_outputs, learning_rate, hidden_activation, output_activation, loss_function):
-        self.n_units = n_units
-        self.n_layers = n_layers
-        self.n_columns = n_columns
-        self.n_outputs = n_outputs
-        self.hidden_activation = hidden_activation
-        self.output_activation = output_activation
-        self.learning_rate = learning_rate
-        self.loss_function = loss_function
-
-    def create_policy_model(self, input_shape):
-        input_layer = layers.Input(shape=input_shape)
-        advantages = layers.Input(shape=[1])
-        
-        hidden_layer = layers.Dense(units=self.n_units, 
-                                    activation=self.hidden_activation,
-                                    use_bias=False,
-                                    kernel_initializer=glorot_uniform(seed=42))(input_layer)
-        
-        output_layer = layers.Dense(units=self.n_outputs, 
-                                    activation=self.output_activation,
-                                    use_bias=False,
-                                    kernel_initializer=glorot_uniform(seed=42))(hidden_layer)
-        
-        def log_likelihood_loss(actual_labels, predicted_labels):
-            log_likelihood = backend.log(actual_labels * (actual_labels - predicted_labels) + 
-                                  (1 - actual_labels) * (actual_labels + predicted_labels))
-            return backend.mean(log_likelihood * advantages, keepdims=True)
-        
-        if self.loss_function == 'log_likelihood':
-            self.loss_function = log_likelihood_loss
-                
-        policy_model = Model(inputs=[input_layer, advantages], outputs=output_layer)
-        policy_model.compile(loss=self.loss_function, optimizer=Adam(self.learning_rate))
-        model_prediction = Model(input=[input_layer], outputs=output_layer)
-        return policy_model, model_prediction
 
 
 

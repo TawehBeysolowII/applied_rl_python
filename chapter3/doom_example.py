@@ -122,8 +122,7 @@ def train_model(model, environment):
 
                 target_Qs_batch = []
 
-                Qs_next_state = sess.run(model.predicted_Q, feed_dict={model.input_matrix: next_states,
-                                                                       model.actions: action})
+                Qs_next_state = sess.run(model.predicted_Q, feed_dict={model.input_matrix: next_states, model.actions: actions})
                 
                 for i in range(0, len(batch)):
                     terminal = dones[i]
@@ -138,12 +137,11 @@ def train_model(model, environment):
 
                 targets = np.array([each for each in target_Qs_batch])
                 
-                '''
-                error_rate = sess.run([model.error_rate], feed_dict={model.input_matrix: states,
-                                                                 model.target_Q: targets,
-                                                                 model.actions: actions})
-
-                
+                error_rate, _ = sess.run([model.error_rate, model.optimizer], 
+                                          feed_dict={model.input_matrix: states,
+                                                     model.target_Q: targets,
+                                                     model.actions: actions})
+                '''                
                 # Write TF Summaries
                 summary = sess.run(write_op, feed_dict={model.inputs_: states,
                                                    model.target_Q: targets,
@@ -197,6 +195,7 @@ def play_doom(model, environment):
                 done = environment.is_episode_finished()
                 score = environment.get_total_reward()
                 scores.append(score)
+                time.sleep(0.01)
                 
                 if done:
                     break  
