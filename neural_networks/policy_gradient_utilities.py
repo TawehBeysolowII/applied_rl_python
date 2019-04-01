@@ -45,6 +45,8 @@ class PolicyGradient():
         
         if self.loss_function == 'log_likelihood':
             self.loss_function = log_likelihood_loss
+        else:
+            self.loss_function = 'categorical_crossentropy'
                 
         policy_model = Model(inputs=[input_layer, advantages], outputs=output_layer)
         policy_model.compile(loss=self.loss_function, optimizer=Adam(self.learning_rate))
