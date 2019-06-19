@@ -61,9 +61,9 @@ def lstm_layer(input, size, actions, apply_softmax=False):
       lstm = tf.contrib.rnn.BasicLSTMCell(size, state_is_tuple=True)
       state_size = lstm.state_size
       step_size = tf.shape(input)[:1]
-      c_init = np.zeros((1, state_size.c), np.float32)
-      h_init = np.zeros((1, state_size.h), np.float32)
-      initial_state = [c_init, h_init]
+      cell_init = np.zeros((1, state_size.c), np.float32)
+      hidden_init = np.zeros((1, state_size.h), np.float32)
+      initial_state = [cell_init, hidden_init]
       cell_state = tf.placeholder(tf.float32, [1, state_size.c])
       hidden_state = tf.placeholder(tf.float32, [1, state_size.h])
       input_state = tf.contrib.rnn.LSTMStateTuple(cell_state, hidden_state)
@@ -78,7 +78,7 @@ def lstm_layer(input, size, actions, apply_softmax=False):
       output_state = [_cell_state[:1, :], _hidden_state[:1, :]]
       output = linear_operation(output, actions, "logits", normalized_columns_initializer(0.01))
       output = tf.nn.softmax(output, dim=-1)
-      return output, input_state, output_state, initial_state
+      return output, _cell_state, _hidden_state
 
 def create_weights_biases(n_layers, n_units, n_columns, n_outputs):
     '''
@@ -128,7 +128,7 @@ class DeepQNetwork():
         self.stride = stride
         self.kernel = kernel
         
-        self.input_matrix = tf.placeholder(tf.float32, [None, *state_size])
+        self.input_matrix = tf.placeholder(tf.float32, [None, state_size])
         self.actions = tf.placeholder(tf.float32, [None, n_classes])
         self.target_Q = tf.placeholder(tf.float32, [None])
             
@@ -238,6 +238,76 @@ class ActorCriticModel():
         self.select_action = select_action
     
         
+class A3CModel():
+    
+    def __init__(self, s_size, a_size, scope, trainer):
+        
+        with tf.variable_scope(scope):
+
+            self.input_layer = tf.placeholder(shape=[None, s_size], 
+                                         dtype=tf.float32)
+            
+            self.input_layer = tf.reshape(self.input_layer, 
+                                          shape=[-1,84,84,1])
+            
+            self.layer1 = tf.layers.batch_normalization(convolution_layer(inputs=input_layer, 
+                                                                     filters=32, 
+                                                                     kernel_size=8, 
+                                                                     strides=4,
+                                                                     dimensions=3))
+                        
+            self.layer2 = tf.layers.batch_normalization(convolution_layer(inputs=tf.nn.relu(layer1), 
+                                                                     filters=64, 
+                                                                     kernel_size=4, 
+                                                                     strides=2,
+                                                                     dimensions=3))
+            
+            layer3 = tf.layers.flatten(inputs=layer3)
+            
+            output_layer = fully_connected_layer(inputs=layer3, 
+                                                 units=512, 
+                                                 activation='softmax')
+            
+            outputs, cell_state, hidden_state = lstm_layer(input=hidden, 
+                                                           size=s_size, 
+                                                           actions=a_size, 
+                                                           apply_softmax=False)
+                    
+            self.state_out = (cell_state[:1, :], hidden_state[:1, :])
+            ouptut_layer = tf.reshape(outputs, [-1, 256])
+            
+            self.policy = slim.fully_connected(input=output_layer, 
+                                               n_units=a_size,
+                                               activation_fn=tf.nn.softmax,
+                                               weights_initializer=normalized_columns_initializer(0.01),
+                                               biases_initializer=None)
+            
+            self.value = slim.fully_connected(input=rnn_out,
+                                              n_units=1,
+                                              activation_fn=None,
+                                              weights_initializer=normalized_columns_initializer(1.0),
+                                              biases_initializer=None)
+            
+            if scope != 'global':
+                self.actions = tf.placeholder(shape=[None],dtype=tf.int32)
+                self.actions_onehot = tf.one_hot(self.actions,a_size,dtype=tf.float32)
+                self.target_v = tf.placeholder(shape=[None],dtype=tf.float32)
+                self.advantages = tf.placeholder(shape=[None],dtype=tf.float32)
+
+                self.responsible_outputs = tf.reduce_sum(self.policy * self.actions_onehot, [1])
+
+                self.value_loss = 0.5 * tf.reduce_sum(tf.square(self.target_v - tf.reshape(self.value,[-1])))
+                self.entropy = - tf.reduce_sum(self.policy * tf.log(self.policy))
+                self.policy_loss = -tf.reduce_sum(tf.log(self.responsible_outputs)*self.advantages)
+                self.loss = 0.5 * self.value_loss + self.policy_loss - self.entropy * 0.01
+
+                local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
+                self.gradients = tf.gradients(self.loss, local_vars)
+                self.var_norms = tf.global_norm(local_vars)
+                grads,self.grad_norms = tf.clip_by_global_norm(self.gradients,40.0)
+                
+                global_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
+                self.apply_grads = trainer.apply_gradients(zip(grads,global_vars))
 
 
 

@@ -8,6 +8,7 @@ Created on Mon Mar 25 15:00:05 2019
 
 import random, tensorflow as tf, numpy as np, matplotlib.pyplot as plt
 from tgym.envs import SpreadTrading
+from tgym.gens.deterministic import WavySignal
 from neural_networks.models import ActorCriticModel
 from neural_networks.market_making_models import DeepQNetworkMM, Memory
 from chapter2.cart_pole_example import calculate_discounted_reward
@@ -45,7 +46,8 @@ sell = np.array([0, 0, 1])
 possible_actions = [hold, buy, sell]
 
 #Classes and variables
-generator = CSVStreamer(filename='/Users/tawehbeysolow/Downloads/amazon_order_book_data2.csv')
+#generator = CSVStreamer(filename='/Users/tawehbeysolow/Downloads/amazon_order_book_data2.csv')
+generator = WavySignal(period_1=25, period_2=50, epsilon=-0.5)
 
 memory = Memory(max_size=memory_size)
 
