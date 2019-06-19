@@ -9,7 +9,7 @@ Created on Mon Mar 25 15:00:05 2019
 import random, tensorflow as tf, numpy as np, matplotlib.pyplot as plt
 from tgym.envs import SpreadTrading
 from neural_networks.market_making_models import DeepQNetworkMM, Memory
-from algorithms.order_book_data import bid_ask_data
+from tgym.gens.deterministic import WavySignal
 
 #Parameters
 episodes = 50
@@ -40,8 +40,11 @@ possible_actions = [hold, buy, sell]
 #Classes and variables
 memory = Memory(max_size=memory_size)
 
+generator = WavySignal(period_1=25, period_2=50, epsilon=-0.5)
+
+
 environment = SpreadTrading(spread_coefficients=[1],
-                            data_generator=bid_ask_data(),
+                            data_generator=generator,
                             trading_fee=trading_fee,
                             time_fee=time_fee,
                             history_length=history_length)
@@ -100,7 +103,9 @@ def train_model(model, environment):
                 
                 state, reward, done, info = environment.step(action)
                 
-                if 'status' in info and info['status'] == 'Closed plot':
+                reward_sum.append(reward)
+                
+                if 'status' in info and info['status'] == 'Closed plot' or step >= max_steps:
                     done = True
                 else:
                     environment.render()
