@@ -7,7 +7,6 @@ Created on Wed Feb 20 21:49:13 2019
 """
 
 import tensorflow as tf, numpy as np
-from sklearn.model_selection import train_test_split
 from baselines.common.distributions import make_pdtype
         
 activation_dictionary = {'elu': tf.nn.elu,

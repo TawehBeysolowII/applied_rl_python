@@ -9,7 +9,6 @@ Created on Mon Mar 25 15:00:05 2019
 import random, tensorflow as tf, numpy as np, matplotlib.pyplot as plt
 from tgym.envs import SpreadTrading
 from tgym.gens.deterministic import WavySignal
-from neural_networks.models import ActorCriticModel
 from neural_networks.market_making_models import DeepQNetworkMM, Memory
 from chapter2.cart_pole_example import calculate_discounted_reward
 from neural_networks.policy_gradient_utilities import PolicyGradient
@@ -46,8 +45,8 @@ sell = np.array([0, 0, 1])
 possible_actions = [hold, buy, sell]
 
 #Classes and variables
-#generator = CSVStreamer(filename='/Users/tawehbeysolow/Downloads/amazon_order_book_data2.csv')
-generator = WavySignal(period_1=25, period_2=50, epsilon=-0.5)
+generator = CSVStreamer(filename='/Users/tawehbeysolow/Downloads/amazon_order_book_data2.csv')
+#generator = WavySignal(period_1=25, period_2=50, epsilon=-0.5)
 
 memory = Memory(max_size=memory_size)
 
@@ -60,7 +59,7 @@ environment = SpreadTrading(spread_coefficients=[1],
 state_size = len(environment.reset())
 
 
-def baseline_model(n_actions, info, random=True):
+def baseline_model(n_actions, info, random=False):
     
     if random == True:
         action = np.random.choice(range(n_actions), p=np.repeat(1/float(n_actions), 3))
@@ -117,7 +116,7 @@ def exploit_explore(session, model, explore_start, explore_stop, decay_rate, dec
     return action, explore_probability
 
 
-def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
+def train_model(environment, dql=None, pg=None, baseline=None):
     scores = []
     done = False
     error_rate, step = 0, 0
@@ -135,8 +134,7 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
         
         
         for episode in range(n_episodes):
-            
-                    
+                                
             for _ in range(100):
                 action = baseline_model(n_actions=n_actions,
                                         info=info)
@@ -185,12 +183,12 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
     
             for episode in range(n_episodes):
                 
-                step, reward_sum = 0, []
-                state = np.reshape(observation, [1, state_size])        
+                current_step, reward_sum = 0, []
+                state = np.reshape(observation, [1, state_size])    
     
-                while step < max_steps:
+                while current_step < max_steps:
                     
-                    step += 1; decay_step += 1
+                    current_step += 1; decay_step += 1
                     
                     action, explore_probability = exploit_explore(session=sess,
                                                                   model=model,
@@ -204,13 +202,10 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
                     state, reward, done, info = environment.step(action)
                     reward_sum.append(reward)
                     
-                    if step == max_steps:
+                    if current_step >= max_steps:
                         done = True
-                    else:
-                        #environment.render()
-                        ''
-                        
-                    if done:
+                                                
+                    if done == True:
                         
                         next_state = np.zeros((state_size,), dtype=np.int)
                         step = max_steps                    
@@ -224,9 +219,9 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
                                   'Explore P: {:.4f}'.format(explore_probability))
                         
                         loss.append(error_rate)
-
     
-                    else:
+                    elif done != True:
+                        
                         next_state = environment.reset()
                         state = next_state
                         memory.add((state, action, reward, next_state, done))
@@ -342,31 +337,9 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
                               sess=None,
                               state=state,
                               pg=True)
-                
-        
-    elif ac == True:
-        
-        model = train_model(policy_model=ActorCriticModel,
-                    environment=environment, 
-                    n_steps=2000, 
-                    max_steps=10000, 
-                    gamma=gamma, 
-                    _lambda=_lambda,
-                    value_coefficient=value_coefficient, 
-                    entropy_coefficient=entropy_coefficient, 
-                    learning_rate=learning_rate, 
-                    max_grad_norm=max_grad_norm, 
-                    log_interval=log_interval)
-
-                
-        market_making(model=model,
-                      environment=environment,
-                      sess=None,
-                      state=state,
-                      ac=True)
-    
              
     if baseline != True:
+        
         plt.title('Policy Gradient Error plot over %s Episodes'%(n_episode+1))
         plt.xlabel('N batches')
         plt.ylabel('Error Rate')
@@ -375,7 +348,7 @@ def train_model(environment, dql=None, pg=None, ac=None, baseline=None):
         plt.waitforbuttonpress()
         return model
         
-def market_making(model, environment, sess, state, dpl=None, pg=None, ac=True):    
+def market_making(model, environment, sess, state, dpl=None, pg=None):    
     
     scores = []
     total_reward = 0
@@ -397,13 +370,7 @@ def market_making(model, environment, sess, state, dpl=None, pg=None, ac=True):
                 predict = model.predict([state])[0]
                 action = np.argmax(predict)
                 action = possible_actions[int(action)]
-            
-            elif ac == True:
-                actions, values = model.step(state)
-                for action in actions:
-                    state, reward, done, info = environment.step(action)
-                    total_reward += reward
-                    
+                                
             state, reward, done, info = environment.step(action)
             total_reward += reward
 
@@ -425,14 +392,9 @@ def market_making(model, environment, sess, state, dpl=None, pg=None, ac=True):
 if __name__ == '__main__':
     
     
-    trained_model = train_model(environment=environment, pg=True)
+    train_model(environment=environment, dql=True)
     
-    
-    market_making(model=trained_model,
-                  environment=environment)
-    
-    
-    
+        
     
     
     
