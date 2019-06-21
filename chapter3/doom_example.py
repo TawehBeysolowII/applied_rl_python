@@ -20,13 +20,13 @@ train = True
 episode_render = False
 n_units = 500
 n_classes = 3
-learning_rate = 1e-2
+learning_rate = 2e-4
 stride = 4 
 kernel = 8
 n_filters = 3
-n_episodes = 500
+n_episodes = 1
 max_steps = 100
-batch_size = 50
+batch_size = 64 
 environment, possible_actions = create_environment()
 state_size = [84, 84, 4]
 action_size = 3 #environment.get_avaiable_buttons_size()
@@ -179,7 +179,6 @@ def play_doom(model, environment):
         for _ in range(100):
             
             done = False
-            
             environment.new_episode()
             
             state = environment.get_state().screen_buffer
@@ -199,12 +198,7 @@ def play_doom(model, environment):
                 
                 if done:
                     break  
-                    
-                else:
-                    next_state = environment.get_state().screen_buffer
-                    next_state, stacked_frames = stack_frames(stacked_frames, next_state, False)
-                    state = next_state
-                    
+                                        
             score = environment.get_total_reward()
             print("Score: ", score)
             

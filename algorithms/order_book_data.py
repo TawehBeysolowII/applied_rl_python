@@ -7,8 +7,11 @@ Created on Mon Mar 25 15:56:09 2019
 """
 
 from tgym.core import DataGenerator
-import pandas as pan
+import numpy as np, csv
 
+def remove_non_ascii(obj):
+    return ''.join([character for character in obj if ord(character) < 128])
+    
 class bid_ask_data(DataGenerator):
     
     def __init__(self, **gen_kwargs):
@@ -18,18 +21,18 @@ class bid_ask_data(DataGenerator):
         self._trainable = False
         self.gen_kwargs = gen_kwargs
         DataGenerator.rewind(self)
-        self.n_products = len(self.next()) / 2
+        self.n_products = 1
         DataGenerator.rewind(self)
         
     @staticmethod
     def _generator():
-        columns = ['bid', 'ask']
-        raw_data = pan.read_csv('/Users/tawehbeysolow/Downloads/amazon_order_book_data.csv', names=columns)
-        scaled_data = raw_data/float(1e5)
-    
-        for i in range(0, len(scaled_data)):            
-            yield scaled_data.ix[i, 0], scaled_data.ix[i, 1]
-            
+        
+        with open('/Users/tawehbeysolow/Downloads/amazon_order_book_data.csv', 'rU') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                row = [float(remove_non_ascii(_row))/ for _row in row]
+                yield np.array(row, dtype=np.float)
+
     def _iterator_end(self):
         """Rewinds if end of data reached.
         """
@@ -51,7 +54,7 @@ class bid_ask_data(DataGenerator):
     def rewind(self):
         """Rewind the generator.
         """
-        self.generator = self._generator(**self.gen_kwargs)
+        self.generator = self._generator()
 
 
 if __name__ == '__main__':
